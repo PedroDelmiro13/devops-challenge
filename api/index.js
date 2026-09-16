@@ -9,7 +9,7 @@ app.get('/status', (req, res) => {
         status: 'UP',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        message: 'Servidor rodando com sucesso na porta ' + PORT
+        message: 'Servidor rodando sucesso na porta ' + PORT
     });
 });
 
