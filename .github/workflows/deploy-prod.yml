@@ -1,0 +1,25 @@
+name: Deploy Producao
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conecta na EC2 e faz o deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST_PROD }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY_PROD }}
+          script: |
+            cd /home/ec2-user/app || (mkdir -p /home/ec2-user/app && cd /home/ec2-user/app)
+            git pull origin main || git clone SEU_LINK_DO_REPO.git .
+            docker build -t lacrei-app:prod .
+            docker stop lacrei-app || true
+            docker rm lacrei-app || true
+            docker run -d --name lacrei-app -p 3000:3000 --restart unless-stopped lacrei-app:prod

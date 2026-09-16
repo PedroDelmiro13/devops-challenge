@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build da imagem Docker
+        run: docker build -t lacrei-app:test .
+
+      - name: Testa se o container sobe e responde
+        run: |
+          docker run -d -p 3000:3000 --name test-container lacrei-app:test
+          sleep 3
+          curl -f http://localhost:3000/status || exit 1
+          docker stop test-container
