@@ -11,6 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Instala dependências
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
       - name: Build da imagem Docker
         run: docker build -t lacrei-app:test .
 
