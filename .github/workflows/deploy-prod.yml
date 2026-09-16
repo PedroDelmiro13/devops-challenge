@@ -17,8 +17,13 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY_PROD }}
           script: |
-            cd /home/ec2-user/app || (mkdir -p /home/ec2-user/app && cd /home/ec2-user/app)
-            git pull origin main || git clone SEU_LINK_DO_REPO.git .
+            if [ -d "/home/ec2-user/app/.git" ]; then
+              cd /home/ec2-user/app
+              git pull origin main
+            else
+              git clone https://github.com/PedroDelmiro13/devops-challenge.git /home/ec2-user/app
+              cd /home/ec2-user/app
+            fi
             docker build -t lacrei-app:prod .
             docker stop lacrei-app || true
             docker rm lacrei-app || true
