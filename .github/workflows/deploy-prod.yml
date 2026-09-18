@@ -1,12 +1,16 @@
 name: Deploy Producao
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
     branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -19,9 +23,10 @@ jobs:
           script: |
             if [ -d "/home/ec2-user/app/.git" ]; then
               cd /home/ec2-user/app
+              git checkout main
               git pull origin main
             else
-              git clone https://github.com/PedroDelmiro13/devops-challenge.git /home/ec2-user/app
+              git clone -b main https://github.com/PedroDelmiro13/devops-challenge.git /home/ec2-user/app
               cd /home/ec2-user/app
             fi
             docker build -t lacrei-app:prod .
