@@ -1,6 +1,6 @@
 # Desafio DevOps – Lacrei Saúde
 
-API simples em Node.js simples com deploy automatizado para staging e produção na AWS, usando Docker e GitHub Actions.
+API simples em Node.js com deploy automatizado para staging e produção na AWS, usando Docker e GitHub Actions.
 
 ## O projeto
 
@@ -49,9 +49,7 @@ São três workflows no GitHub Actions:
 
 **CI** roda em toda PR e em push pra `main` ou `develop`. Ele instala as dependências, roda lint (ESLint), builda a imagem Docker e sobe um container de teste pra confirmar que a rota `/status` responde antes de qualquer coisa seguir adiante.
 
-**Deploy Staging** dispara quando dá push na branch `develop`. Conecta via SSH na instância de staging, atualiza o código e reconstrói o container.
-
-**Deploy Produção** funciona igual, mas na branch `main` e na instância de produção.
+**Deploy Staging** e **Deploy Produção** disparam automaticamente depois que o CI termina, e só rodam de verdade se o CI tiver passado, não bastam mais só o push na branch. Isso foi um ajuste que fiz depois de perceber no teste de rollback, que o deploy de staging rodava mesmo com o CI falhando (os dois workflows disparavam pelo mesmo push, mas de forma independente). Corrigi trocando o gatilho de `push` pra `workflow_run`, condicionado ao CI ter concluído com sucesso.
 
 Ou seja: você desenvolve e testa em `develop`, e quando está tudo certo, faz merge pra `main` pra ir pro ar em produção. Nenhum deploy acontece sem passar primeiro pelo lint e pelos testes do CI.
 
@@ -64,6 +62,7 @@ Os pontos que apliquei:
 - Container rodando com usuário não-root
 - A instância usa uma IAM Role própria, só com a permissão necessária pra mandar logs pro CloudWatch (nada além disso)
 - A porta da aplicação (3000) não é acessível de fora, só através do Nginx
+- Deploy bloqueado automaticamente se o CI (lint + testes) não passar
 
 Um ponto que vale explicar: o SSH das instâncias está liberado pra qualquer IP (`0.0.0.0/0`), e não só pro meu IP como eu queria originalmente. Isso porque o GitHub Actions roda os deploys a partir de servidores com IP variável, então restringir por IP fixo bloquearia o próprio pipeline. O ideal pra resolver isso de verdade seria usar AWS Systems Manager (SSM) no lugar de SSH exposto, mas deixei como melhoria futura.
 
@@ -91,7 +90,7 @@ git revert HEAD
 git push origin <branch>
 ```
 
-Não cheguei a simular uma falha de verdade pra testar esse fluxo na prática por falta de tempo, mas é assim que ele funcionaria dado como o pipeline está montado hoje (avaliado por Inteligência Artificial).
+Testei esse fluxo de ponta a ponta em staging: subi de propósito uma alteração quebrando a rota `/status`, confirmei que o ambiente ficou fora do ar, fiz o rollback manual via Docker (voltou a responder), e depois apliquei o `git revert` pra corrigir o código na origem, deixando o pipeline automático assumir de novo daí em diante. Foi justamente esse teste que revelou o problema do deploy não depender do CI, corrigido na seção de Pipeline.
 
 ## Erros que apareceram no caminho
 
@@ -109,14 +108,13 @@ Na parte de HTTPS, o Certbot recusava gerar certificado porque eu estava tentand
 
 Já configurando o CloudWatch, o agente ficava tentando enviar os logs sem sucesso por um tempo, era só a IAM Role recém-associada ainda não ter propagado direito. Reiniciando o agente depois de alguns minutos resolveu.
 
-E o erro mais importante: em um momento de debug, acabei colando o conteúdo da chave privada SSH da instância de staging em texto puro numa conversa. Tratei essa chave como comprometida a partir daí, gerei uma key pair nova e associei ela na instância, descartando a antiga.
+Testando o rollback de propósito, percebi que o deploy de staging ia pro ar mesmo com o CI falhando, porque os dois workflows disparavam pelo mesmo push mas de forma independente. Corrigi mudando o gatilho do deploy pra só rodar depois do CI terminar com sucesso (`workflow_run`).
 
 ## O que ficou de fora (e daria pra melhorar)
 
 - Restringir o SSH por IP fixo, usando AWS SSM no lugar de acesso direto
 - Guardar segredos da aplicação (não só de infraestrutura) no AWS Secrets Manager
 - Versionar as imagens Docker com tags específicas em vez de sempre sobrescrever a mesma tag — isso tornaria o rollback mais preciso
-- Testar o rollback de verdade, com uma falha simulada
 - Um domínio próprio no lugar do DuckDNS
 
 ## Bônus: integração com Asaas (proposta)
