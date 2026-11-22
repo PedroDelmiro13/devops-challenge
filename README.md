@@ -36,12 +36,16 @@ Usei uma imagem Alpine e separei a instalação de dependências do resto do có
 
 Staging e produção rodam em duas instâncias EC2 separadas (`lacrei-staging` e `lacrei-producao`), cada uma com Docker, Git, Nginx e Certbot instalados. Como não tenho um domínio próprio, usei subdomínios gratuitos do DuckDNS pra conseguir gerar certificado HTTPS de verdade:
 
+![Instâncias EC2 rodando](images/08-instancias-ec2.png)
+
 - Staging: https://lacreii-staging.duckdns.org/status
 - Produção: https://lacreii-prod.duckdns.org/status
 
 O Nginx faz o papel de proxy reverso: recebe a conexão em HTTPS (443) e repassa internamente pro container, que roda na porta 3000. A porta 3000 não fica exposta pra internet, só o Nginx conversa com ela.
 
 As credenciais de acesso ficam guardadas como GitHub Secrets, nunca no código.
+
+![Secrets configurados no GitHub](images/03-secrets.png)
 
 ## Pipeline
 
@@ -52,6 +56,8 @@ São três workflows no GitHub Actions:
 **Deploy Staging** e **Deploy Produção** disparam automaticamente depois que o CI termina, e só rodam de verdade se o CI tiver passado, não bastam mais só o push na branch. Isso foi um ajuste que fiz depois de perceber no teste de rollback, que o deploy de staging rodava mesmo com o CI falhando (os dois workflows disparavam pelo mesmo push, mas de forma independente). Corrigi trocando o gatilho de `push` pra `workflow_run`, condicionado ao CI ter concluído com sucesso.
 
 Ou seja: você desenvolve e testa em `develop`, e quando está tudo certo, faz merge pra `main` pra ir pro ar em produção. Nenhum deploy acontece sem passar primeiro pelo lint e pelos testes do CI.
+
+![Pipelines sendo executadas](images/04-pipelines.png)
 
 ## Segurança
 
@@ -64,13 +70,23 @@ Os pontos que apliquei:
 - A porta da aplicação (3000) não é acessível de fora, só através do Nginx
 - Deploy bloqueado automaticamente se o CI (lint + testes) não passar
 
+![Security Groups configurados](images/09-security-groups.png)
+
 Um ponto que vale explicar: o SSH das instâncias está liberado pra qualquer IP (`0.0.0.0/0`), e não só pro meu IP como eu queria originalmente. Isso porque o GitHub Actions roda os deploys a partir de servidores com IP variável, então restringir por IP fixo bloquearia o próprio pipeline. O ideal pra resolver isso de verdade seria usar AWS Systems Manager (SSM) no lugar de SSH exposto, mas deixei como melhoria futura.
+
+![Role no IAM](images/10-roles-iam.png)
 
 ## Logs e monitoramento
 
 Os logs da aplicação dá pra ver direto com `docker logs lacrei-app` em cada instância. Além disso, configurei o CloudWatch Agent pra mandar os logs de acesso e erro do Nginx pra um log group centralizado (`lacrei-app-logs`), com streams separados pra staging e produção.
 
+![Tela inicial dos logs](images/05-logs-tela-inicial.png)
+
+![Logs abertos no CloudWatch](images/06-logs-abertos.png)
+
 Também criei um alarme de CPU: se a instância de produção passar de 80% de uso por 5 minutos, chega um e-mail de aviso via SNS.
+
+![Alarme de CPU no CloudWatch](images/07-alarme-cloudwatch.png)
 
 ## Rollback
 
@@ -85,10 +101,14 @@ docker run -d --name lacrei-app -p 3000:3000 --restart unless-stopped <ID_DA_IMA
 
 Isso resolve o problema na hora, mas é temporário — se não reverter o código também, o próximo deploy automático vai trazer o erro de volta. Por isso, o passo seguinte é reverter o commit no Git e dar push de novo:
 
+![Rollback Parte 1](images/01-rollback-parte-1.png)
+
 ```bash
 git revert HEAD
 git push origin <branch>
 ```
+
+![Rollback Parte 2](images/02-rollback-parte-2.png)
 
 Testei esse fluxo de ponta a ponta em staging: subi de propósito uma alteração quebrando a rota `/status`, confirmei que o ambiente ficou fora do ar, fiz o rollback manual via Docker (voltou a responder), e depois apliquei o `git revert` pra corrigir o código na origem, deixando o pipeline automático assumir de novo daí em diante. Foi justamente esse teste que revelou o problema do deploy não depender do CI, corrigido na seção de Pipeline.
 
